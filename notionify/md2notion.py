@@ -416,7 +416,11 @@ class Md2NotionUploader:
                 batch_num = (batch_start // batch_size) + 1
                 total_batches = (total_to_upload + batch_size - 1) // batch_size
 
-                print(f"  ⏳ 上传批次 {batch_num}/{total_batches} (blocks {start_line + batch_start + 1}-{start_line + batch_end}/{total_blocks})...", end='', flush=True)
+                # 计算实际处理的 blocks 范围（在原始 blocks 中的位置）
+                actual_start = start_line + batch_start + 1
+                actual_end = start_line + batch_end
+
+                print(f"  ⏳ 上传批次 {batch_num}/{total_batches} (blocks {actual_start}-{actual_end}/{total_blocks})...", end='', flush=True)
 
                 try:
                     notion.blocks.children.append(block_id=page_id, children=content_blocks)
