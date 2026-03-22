@@ -13,7 +13,12 @@ import configparser
 
 # 读取配置文件
 config = configparser.ConfigParser()
-config_path = os.path.join(os.path.dirname(__file__), '..', 'compression_config.ini')
+# 使用绝对路径，避免相对路径问题
+config_path = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    '..',
+    'compression_config.ini'
+))
 if os.path.exists(config_path):
     config.read(config_path, encoding='utf-8')
 
@@ -60,6 +65,10 @@ class NotionFileUploader:
             width, height = img.size
             print(f"    原始尺寸: {width}x{height}, {original_size / 1024 / 1024:.2f}MB")
 
+            # 检测 GIF 动画
+            if img.format == 'GIF' and hasattr(img, 'n_frames') and img.n_frames > 1:
+                print(f"    ⚠️  警告: GIF 动画（{img.n_frames} 帧）将被转为静态 JPEG")
+
             # 调整尺寸（如果超过最大边长）
             if max(width, height) > COMPRESS_IMAGE_MAX_DIMENSION:
                 ratio = COMPRESS_IMAGE_MAX_DIMENSION / max(width, height)
@@ -93,12 +102,15 @@ class NotionFileUploader:
             # 如果压缩后反而更大，返回原始数据
             if compressed_size >= original_size:
                 print(f"    压缩后未减小，使用原图")
-                return image_data
+                return None  # 返回 None 表示压缩失败，使用原图
 
             return compressed_data
 
         except Exception as e:
+            import traceback
             print(f"    ⚠️ 压缩失败: {e}，使用原图")
+            if os.getenv('DEBUG'):
+                traceback.print_exc()
             return None
 
     def upload_from_url(self, file_url: str, content_type: str = "image/jpeg") -> Optional[str]:
@@ -116,7 +128,10 @@ class NotionFileUploader:
         try:
             # Step 1: 下载文件
             print(f"  下载文件: {file_url[:80]}...")
-            response = requests.get(file_url, timeout=30)
+            # 根据文件大小动态调整超时时间
+            # 假设最大 20MB，按 500KB/s 下载速度计算
+            estimated_timeout = min(120, max(30, 20 * 1024 * 1024 / (500 * 1024)))
+            response = requests.get(file_url, timeout=estimated_timeout)
             response.raise_for_status()
             file_data = response.content
             original_size = len(file_data)
@@ -130,6 +145,14 @@ class NotionFileUploader:
             )
 
             if should_compress:
+                # 检测 GIF 动画
+                try:
+                    test_img = Image.open(io.BytesIO(file_data))
+                    if test_img.format == 'GIF' and hasattr(test_img, 'n_frames') and test_img.n_frames > 1:
+                        print(f"  ⚠️  检测到 GIF 动画（{test_img.n_frames} 帧），压缩将丢失动画效果")
+                except:
+                    pass
+
                 print(f"  🗜️ 图片超过 {COMPRESS_IMAGE_THRESHOLD_MB}MB，启用压缩...")
                 compressed_data = self.compress_image(file_data, file_url)
 
@@ -149,24 +172,33 @@ class NotionFileUploader:
 
             # Step 4: 使用 SDK 的 send 方法上传文件
             # 需要 file object
-            from pathlib import Path
+            # 从 URL 中提取文件名，如果失败使用时间戳
+            import time
+            filename = file_url.split('/')[-1].split('?')[0]
+            if not filename or len(filename) < 3:
+                filename = f"file_{int(time.time())}.jpg"
 
-            # 从 URL 中提取文件名
-            filename = file_url.split('/')[-1].split('?')[0] or "file"
-
-            # 创建 BytesIO 对象
+            # 创建 BytesIO 对象，使用后需要关闭
             file_obj = io.BytesIO(file_data)
 
-            self.client.file_uploads.send(
-                file_upload_id=file_upload_id,
-                file=(filename, file_obj, content_type)
-            )
+            try:
+                self.client.file_uploads.send(
+                    file_upload_id=file_upload_id,
+                    file=(filename, file_obj, content_type)
+                )
 
-            print(f"  ✅ 上传成功: {len(file_data)} bytes")
-            return file_upload_id
+                print(f"  ✅ 上传成功: {len(file_data)} bytes")
+                return file_upload_id
+            finally:
+                # 确保关闭 BytesIO 对象，释放内存
+                file_obj.close()
 
         except Exception as e:
+            import traceback
             print(f"  ❌ 上传失败: {e}")
+            # 打印详细错误堆栈，方便调试
+            if os.getenv('DEBUG'):
+                traceback.print_exc()
             return None
 
     def create_image_block(self, file_upload_id: str) -> Dict[str, Any]:
