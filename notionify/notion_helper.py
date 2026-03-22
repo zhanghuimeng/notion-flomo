@@ -18,6 +18,25 @@ class NotionHelper:
         self.client = Client(auth=os.getenv("NOTION_TOKEN"), log_level=logging.ERROR)
         self.page_id = extract_page_id(os.getenv("NOTION_PAGE"))
         self.__cache = {}
+        self.__data_source_cache = {}
+
+    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    def get_data_source_id(self, database_id):
+        """Get the first data source ID from a database (for API 2025-09-03+)"""
+        if database_id in self.__data_source_cache:
+            return self.__data_source_cache[database_id]
+
+        # Retrieve the database to get its data sources
+        database = self.client.databases.retrieve(database_id=database_id)
+        data_sources = database.get("data_sources", [])
+
+        if not data_sources:
+            raise ValueError(f"No data sources found in database {database_id}")
+
+        # Cache and return the first data source ID
+        data_source_id = data_sources[0]["id"]
+        self.__data_source_cache[database_id] = data_source_id
+        return data_source_id
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def clear_page_content(self, page_id):
@@ -54,9 +73,11 @@ class NotionHelper:
         )
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
-    def query(self, **kwargs):
+    def query(self, database_id, **kwargs):
+        """Query a database using its data source ID (API 2025-09-03+)"""
+        data_source_id = self.get_data_source_id(database_id)
         kwargs = {k: v for k, v in kwargs.items() if v}
-        return self.client.databases.query(**kwargs)
+        return self.client.data_sources.query(data_source_id=data_source_id, **kwargs)
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_block_children(self, id):
@@ -79,13 +100,14 @@ class NotionHelper:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def query_all(self, database_id):
-        """获取database中所有的数据"""
+        """获取database中所有的数据 (API 2025-09-03+)"""
+        data_source_id = self.get_data_source_id(database_id)
         results = []
         has_more = True
         start_cursor = None
         while has_more:
-            response = self.client.databases.query(
-                database_id=database_id,
+            response = self.client.data_sources.query(
+                data_source_id=data_source_id,
                 start_cursor=start_cursor,
                 page_size=100,
             )

@@ -2,3 +2,10 @@ scripts/__pycache__/
 .env
 flomo/__pycache__/
 .idea
+
+# Claude Code
+.claude/local/
+CLAUDE.local.md
+
+# Python
+.venv/
