@@ -339,18 +339,104 @@ class Md2NotionUploader:
         else:
             print(f"file {filepath} not found")
 
-    def uploadSingleFileContent(self, notion, content, page_id="", start_line = 0):
-        if content is not None:
-            # get the notionify style block information
-            notion_blocks = read_file_content(content)
-            for i,content in enumerate(notion_blocks):
-                if i < start_line:continue
-                print(f"uploading line {i},............", end = '')
-                # q:'uploader' is not defined in the function?  a: uploader is the instance of the class
-                self.uploadBlock(content, notion, page_id)
-                print('done!')
-        else:
+    def uploadSingleFileContent(self, notion, content, page_id="", start_line=0, batch_size=50):
+        """
+        批量上传内容到 Notion（优化版本）
+
+        Args:
+            notion: Notion client
+            content: Markdown 内容
+            page_id: 目标页面 ID
+            start_line: 起始行
+            batch_size: 每批上传的 block 数量（默认 50，Notion 限制 100）
+        """
+        import time
+
+        if content is None:
             print(f"content is None")
+            return
+
+        # 解析所有 blocks
+        notion_blocks = read_file_content(content)
+        total_blocks = len(notion_blocks)
+
+        if start_line >= total_blocks:
+            print(f"start_line {start_line} >= total_blocks {total_blocks}, 跳过")
+            return
+
+        print(f"  📝 总共 {total_blocks} 个 blocks，从第 {start_line} 行开始，每批 {batch_size} 个")
+
+        # 批量上传
+        blocks_to_upload = notion_blocks[start_line:]
+        total_to_upload = len(blocks_to_upload)
+
+        for batch_start in range(0, total_to_upload, batch_size):
+            batch_end = min(batch_start + batch_size, total_to_upload)
+            batch = blocks_to_upload[batch_start:batch_end]
+
+            # 转换为 Notion block 格式
+            content_blocks = []
+            for blockDescriptor in batch:
+                blockClass = blockDescriptor["type"]
+
+                new_name_map = {
+                    'text': 'paragraph',
+                    'bulleted_list': 'bulleted_list_item',
+                    'header': 'heading_1',
+                    'sub_header': 'heading_2',
+                    'sub_sub_header': 'heading_3',
+                    'numbered_list': 'numbered_list_item'
+                }
+
+                old_name = blockDescriptor['type']._type
+                new_name = new_name_map.get(old_name, old_name)
+
+                if new_name == 'collection_view':
+                    # 表格
+                    content_blocks.extend(self.convert_table(blockDescriptor))
+                elif new_name == 'image':
+                    # 图片
+                    content_blocks.extend(self.convert_image(blockDescriptor))
+                elif 'title' in blockDescriptor:
+                    content = blockDescriptor['title']
+                    parsed_blocks = self.blockparser(content, new_name)
+                    content_blocks.extend(parsed_blocks)
+                elif new_name == 'code':
+                    language = blockDescriptor.get('language', 'plain text')
+                    content = blockDescriptor['title_plaintext']
+                    parsed_blocks = self.blockparser(content, new_name)
+                    if parsed_blocks:
+                        parsed_blocks[0]['code']['language'] = language.lower()
+                        content_blocks.extend(parsed_blocks)
+                else:
+                    content_blocks.append({new_name: {}})
+
+            # 上传这一批 blocks
+            if content_blocks:
+                batch_num = (batch_start // batch_size) + 1
+                total_batches = (total_to_upload + batch_size - 1) // batch_size
+
+                print(f"  ⏳ 上传批次 {batch_num}/{total_batches} (blocks {start_line + batch_start + 1}-{start_line + batch_end}/{total_blocks})...", end='', flush=True)
+
+                try:
+                    notion.blocks.children.append(block_id=page_id, children=content_blocks)
+                    print(f" ✅ 完成")
+                except Exception as e:
+                    print(f" ❌ 失败: {e}")
+                    # 如果批量失败，尝试逐个上传
+                    print(f"  🔄 切换到逐个上传模式...")
+                    for i, block in enumerate(content_blocks):
+                        try:
+                            print(f"    上传 block {i+1}/{len(content_blocks)}...", end='', flush=True)
+                            notion.blocks.children.append(block_id=page_id, children=[block])
+                            print(f" ✅")
+                        except Exception as e2:
+                            print(f" ❌ 失败: {e2}")
+                            continue
+
+            # 批次间延迟，避免触发 Notion rate limit
+            if batch_end < total_to_upload:
+                time.sleep(0.35)  # 350ms 延迟
 
 
 if __name__ == '__main__':

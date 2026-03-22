@@ -104,7 +104,14 @@ def get_quote(content):
 
 
 def get_rich_text_from_result(result, name):
-    return result.get("properties").get(name).get("rich_text")[0].get("plain_text")
+    """从 Notion API 结果中获取 rich_text 字段"""
+    try:
+        rich_text_list = result.get("properties").get(name).get("rich_text")
+        if rich_text_list and len(rich_text_list) > 0:
+            return rich_text_list[0].get("plain_text")
+        return None
+    except (AttributeError, KeyError, IndexError):
+        return None
 
 
 def get_number_from_result(result, name):

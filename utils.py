@@ -71,20 +71,69 @@ def str_to_timestamp(date):
 
 
 def truncate_string(s, length=30):
+    """
+    智能截取字符串作为标题
+    规则：
+    1. 跳过开头的 URL（https://...）
+    2. 过滤掉标签（#xxx）
+    3. 过滤掉 Markdown 格式符号（**、__、*、_等）
+    4. 设置最小长度（至少 15 字符）
+    5. 在标点符号处截断（更自然）
+    6. 最多 30 字符
+    """
+    # 跳过开头的 URL
+    s = re.sub(r'^https?://\S+\s*', '', s.strip())
+
+    # 过滤掉标签（#开头的词）
+    s = re.sub(r'#\S+\s*', '', s)
+
+    # 过滤掉 Markdown 格式符号
+    s = re.sub(r'\*\*|__|\*|_(?=\w)', '', s)  # 移除 **、__、*、_
+
+    # 清理多余的空格
+    s = ' '.join(s.split())
+
+    # 如果处理后为空，返回默认标题
+    if not s:
+        return "无标题"
+
+    # 如果总长度小于等于 length，直接返回
+    if len(s) <= length:
+        return s
+
+    # 设置最小长度（至少 15 字符）
+    min_length = min(15, length)
+
     # 正则表达式匹配标点符号或换行符
     pattern = re.compile(r'[，。！？；：,.!?;:\n]')
 
-    # 查找第一个匹配的位置
-    match = pattern.search(s)
+    # 查找所有匹配的位置
+    matches = list(pattern.finditer(s))
 
-    if match:
-        # 如果找到匹配，并且位置在限制长度之前，则在该位置截取
-        end_pos = match.start() if match.start() < length else length
-    else:
-        # 如果没有找到匹配，则截取前30个字符
-        end_pos = length
+    if not matches:
+        # 如果没有找到标点符号，直接截取到 length
+        return s[:length]
 
-    return s[:end_pos]
+    # 寻找第一个 >= min_length 且 <= length 的标点符号
+    end_pos = length
+    for match in matches:
+        pos = match.start()
+        if min_length <= pos <= length:
+            end_pos = pos
+            break
+        elif pos > length:
+            # 如果所有标点都在 length 之后，使用前一个标点
+            if matches and matches[0].start() >= min_length:
+                end_pos = matches[0].start()
+            break
+
+    result = s[:end_pos].strip()
+
+    # 如果最终结果为空或太短，返回默认截取
+    if len(result) < min_length:
+        return s[:length]
+
+    return result
 
 
 def is_within_n_days(target_date_str, n):

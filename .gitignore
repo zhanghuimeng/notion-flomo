@@ -9,3 +9,40 @@ CLAUDE.local.md
 
 # Python
 .venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Flomo 数据文件（隐私，不入 Git）
+flomo_data.json
+mapping.json
+flomo_preview.html
+flomo_analysis.json
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# 媒体文件
+images/
+audio/
+*.jpeg
+*.jpg
+*.png
+*.gif
+*.webp
+*.mp3
+*.m4a
+*.wav
+*.ogg
+
+# 系统文件
+.DS_Store
+Thumbs.db

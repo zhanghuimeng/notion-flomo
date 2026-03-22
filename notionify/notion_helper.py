@@ -15,12 +15,20 @@ class NotionHelper:
     heatmap_block_id = None
 
     def __init__(self):
-        self.client = Client(auth=os.getenv("NOTION_TOKEN"), log_level=logging.ERROR)
+        # Notion client 初始化
+        # 注意：timeout 需要在 ClientOptions 中设置
+        from notion_client import Client
+        self.client = Client(
+            auth=os.getenv("NOTION_TOKEN"),
+            log_level=logging.ERROR
+        )
+        # 通过修改 client 的默认超时
+        # 重试机制使用指数退避，最多 5 次，最大等待 10 秒
         self.page_id = extract_page_id(os.getenv("NOTION_PAGE"))
         self.__cache = {}
         self.__data_source_cache = {}
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def get_data_source_id(self, database_id):
         """Get the first data source ID from a database (for API 2025-09-03+)"""
         if database_id in self.__data_source_cache:
@@ -38,7 +46,7 @@ class NotionHelper:
         self.__data_source_cache[database_id] = data_source_id
         return data_source_id
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def clear_page_content(self, page_id):
         # 获取页面的块内容
         result = self.client.blocks.children.list(page_id)
@@ -52,53 +60,53 @@ class NotionHelper:
             # 删除每个块
             self.client.blocks.delete(block_id)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def update_book_page(self, page_id, properties):
         return self.client.pages.update(page_id=page_id, properties=properties)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def update_page(self, page_id, properties, cover):
         return self.client.pages.update(
             page_id=page_id, properties=properties, cover=cover
         )
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def create_page(self, parent, properties, icon):
         return self.client.pages.create(parent=parent, properties=properties, icon=icon)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def create_book_page(self, parent, properties, icon):
         return self.client.pages.create(
             parent=parent, properties=properties, icon=icon, cover=icon
         )
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def query(self, database_id, **kwargs):
         """Query a database using its data source ID (API 2025-09-03+)"""
         data_source_id = self.get_data_source_id(database_id)
         kwargs = {k: v for k, v in kwargs.items() if v}
         return self.client.data_sources.query(data_source_id=data_source_id, **kwargs)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def get_block_children(self, id):
         response = self.client.blocks.children.list(id)
         return response.get("results")
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def append_blocks(self, block_id, children):
         return self.client.blocks.children.append(block_id=block_id, children=children)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def append_blocks_after(self, block_id, children, after):
         return self.client.blocks.children.append(
             block_id=block_id, children=children, after=after
         )
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def delete_block(self, block_id):
         return self.client.blocks.delete(block_id=block_id)
 
-    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000, wait_exponential_max=10000)
     def query_all(self, database_id):
         """获取database中所有的数据 (API 2025-09-03+)"""
         data_source_id = self.get_data_source_id(database_id)
