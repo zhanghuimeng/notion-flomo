@@ -191,7 +191,7 @@ class Flomo2Notion:
         return blocks
 
     def insert_memo(self, memo):
-        print("insert_memo:", memo)
+        print(f"\n✨ 新增 memo: {memo['slug']} (创建于 {memo.get('created_at', 'N/A')})")
         content_md = markdownify(memo['content'])
         parent = {"database_id": self.notion_helper.page_id, "type": "database_id"}
         content_text = html2text.html2text(memo['content'])
@@ -246,7 +246,7 @@ class Flomo2Notion:
         2. 如果内容没变，只更新标题
         3. 如果内容变了，才清空并重新上传
         """
-        print("update_memo:", memo)
+        print(f"\n📝 更新 memo: {memo['slug']} (修改于 {memo.get('updated_at', 'N/A')})")
 
         # Step 1: 获取现有页面的更新时间
         try:
@@ -406,9 +406,18 @@ class Flomo2Notion:
         print("="*70)
         print()
 
+        # 统计计数器
+        stats = {
+            'skipped_old': 0,      # 跳过的旧数据
+            'skipped_deleted': 0,  # 跳过的已删除数据
+            'updated': 0,          # 更新的数据
+            'inserted': 0,         # 新增的数据
+        }
+
         for memo in memo_list:
             # 3.0 跳过已删除的 memo
             if memo.get('deleted_at') is not None:
+                stats['skipped_deleted'] += 1
                 continue
 
             # 3.1 判断memo的slug是否存在，不存在则写入
@@ -418,13 +427,28 @@ class Flomo2Notion:
                 full_update = os.getenv("FULL_UPDATE", "false").lower() == "true"
                 interval_day = int(os.getenv("UPDATE_INTERVAL_DAY", "7"))
                 if not full_update and not is_within_n_days(memo['updated_at'], interval_day):
-                    print("is_within_n_days slug:", memo['slug'])
+                    print(f"  ⏭️  跳过旧数据（{memo['updated_at']}，超过{interval_day}天）: {memo['slug']}")
+                    stats['skipped_old'] += 1
                     continue
 
                 page_id = self.slug_to_page_id[memo['slug']]
                 self.update_memo(memo, page_id)
+                stats['updated'] += 1
             else:
                 self.insert_memo(memo)
+                stats['inserted'] += 1
+
+        # 打印统计信息
+        print()
+        print("="*70)
+        print("📊 同步完成统计")
+        print("="*70)
+        print(f"  ✅ 新增: {stats['inserted']} 条")
+        print(f"  ✅ 更新: {stats['updated']} 条")
+        print(f"  ⏭️  跳过（旧数据）: {stats['skipped_old']} 条")
+        print(f"  ⏭️  跳过（已删除）: {stats['skipped_deleted']} 条")
+        print(f"  📦 总计: {len(memo_list)} 条")
+        print()
 
 
 if __name__ == "__main__":
