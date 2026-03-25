@@ -30,6 +30,15 @@ flomo_analysis.json
 *.swp
 *~
 
+# 调试脚本（不入 Git）
+check_sync_status.py
+force_sync_memo.py
+full_sync_memo.py
+manual_sync_memo.py
+fix_all_page_titles.py
+fix_page_titles.py
+problem_pages.json
+
 # 媒体文件
 images/
 audio/
