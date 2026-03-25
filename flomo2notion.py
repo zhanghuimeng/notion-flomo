@@ -259,8 +259,41 @@ class Flomo2Notion:
         # Step 2: 对比时间戳
         flomo_updated = memo.get('updated_at', '')
 
-        # 如果 Flomo 的更新时间 <= Notion 的更新时间，只更新标题
-        if notion_updated and flomo_updated <= notion_updated:
+        # 正确的时间比较：解析为 datetime 对象
+        # 注意：Notion Date 属性只精确到分钟，秒数会被截断为 00
+        # 所以我们只比较到分钟级别
+        should_full_update = False
+        if notion_updated and flomo_updated:
+            try:
+                from datetime import datetime
+                import pytz
+
+                # 解析 Notion 时间（ISO 格式带时区）
+                notion_dt = datetime.fromisoformat(notion_updated.replace('Z', '+00:00'))
+
+                # 解析 Flomo 时间（本地时间，假设为东八区）
+                flomo_dt = datetime.strptime(flomo_updated, '%Y-%m-%d %H:%M:%S')
+                beijing_tz = pytz.timezone('Asia/Shanghai')
+                flomo_dt = beijing_tz.localize(flomo_dt)
+
+                # 比较：只比较到分钟级别
+                # 如果 Flomo 时间（忽略秒）> Notion 时间，说明有更新
+                notion_minutes = notion_dt.replace(second=0, microsecond=0)
+                flomo_minutes = flomo_dt.replace(second=0, microsecond=0)
+
+                should_full_update = flomo_minutes > notion_minutes
+
+                if should_full_update:
+                    print(f"  📝 内容已变化，完整更新")
+                else:
+                    print(f"  ⏭️  内容未变化，只更新标题")
+
+            except Exception as e:
+                print(f"  ⚠️  时间解析失败: {e}，默认完整更新")
+                should_full_update = True
+
+        # 如果 Flomo 的更新时间 <= Notion 的更新时间（分钟级别），只更新标题
+        if notion_updated and flomo_updated and not should_full_update:
             print(f"  ⏭️  内容未变化，只更新标题")
             # 只更新标题（应用新的过滤规则）
             content_text = html2text.html2text(memo['content'])
@@ -315,22 +348,49 @@ class Flomo2Notion:
         self.slug_to_page_id[memo['slug']] = page_id
 
     # 具体步骤：
+    # 0. 从 Flomo API 拉取最新数据
     # 1. 调用flomo web端的api从flomo获取数据
     # 2. 轮询flomo的列表数据，调用notion api将数据同步写入到database中的page
     def sync_to_notion(self):
-        # 1. 调用flomo web端的api从flomo获取数据
+        # Step 0: 从 Flomo API 拉取最新数据
+        print("="*70)
+        print("📥 步骤0: 从 Flomo API 拉取最新数据")
+        print("="*70)
+        print()
+
         authorization = os.getenv("FLOMO_TOKEN")
         memo_list = []
         latest_updated_at = "0"
 
+        print("正在获取 Flomo 数据...")
         while True:
             new_memo_list = self.flomo_api.get_memo_list(authorization, latest_updated_at)
             if not new_memo_list:
                 break
             memo_list.extend(new_memo_list)
+            print(f"  已获取 {len(memo_list)} 条...")
             latest_updated_at = str(int(time.mktime(time.strptime(new_memo_list[-1]['updated_at'], "%Y-%m-%d %H:%M:%S"))))
 
-        # 2. 先建立现有的 slug -> page_id 映射（用于内部链接）
+        print()
+        print(f"✅ 获取到 {len(memo_list)} 条 memo")
+
+        # 保存到 flomo_data.json
+        import json
+        flomo_data = {
+            "memos": memo_list,
+            "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        }
+
+        with open('flomo_data.json', 'w', encoding='utf-8') as f:
+            json.dump(flomo_data, f, ensure_ascii=False, indent=2)
+
+        print(f"✅ 数据已保存到 flomo_data.json")
+        print()
+
+        # Step 1: 建立 slug -> page_id 映射（用于内部链接）
+        print("="*70)
+        print("🗺️  步骤1: 建立页面映射")
+        print("="*70)
         print("正在查询 Notion 中已有的记录...")
         notion_memo_list = self.notion_helper.query_all(self.notion_helper.page_id)
         for notion_memo in notion_memo_list:
@@ -338,8 +398,14 @@ class Flomo2Notion:
             if slug:
                 self.slug_to_page_id[slug] = notion_memo.get("id")
         print(f"已建立 {len(self.slug_to_page_id)} 个页面的映射")
+        print()
 
-        # 3. 轮询flomo的列表数据
+        # Step 2: 轮询flomo的列表数据
+        print("="*70)
+        print("🔄 步骤2: 同步数据到 Notion")
+        print("="*70)
+        print()
+
         for memo in memo_list:
             # 3.0 跳过已删除的 memo
             if memo.get('deleted_at') is not None:
@@ -349,8 +415,8 @@ class Flomo2Notion:
             # 3.2 防止大批量更新，只更新更新时间为制定时间的数据（默认为7天）
             if memo['slug'] in self.slug_to_page_id.keys():
                 # 是否全量更新，默认否
-                full_update = os.getenv("FULL_UPDATE", False)
-                interval_day = os.getenv("UPDATE_INTERVAL_DAY", 7)
+                full_update = os.getenv("FULL_UPDATE", "false").lower() == "true"
+                interval_day = int(os.getenv("UPDATE_INTERVAL_DAY", "7"))
                 if not full_update and not is_within_n_days(memo['updated_at'], interval_day):
                     print("is_within_n_days slug:", memo['slug'])
                     continue
