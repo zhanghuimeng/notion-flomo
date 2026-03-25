@@ -238,10 +238,48 @@ class Flomo2Notion:
             print(f"  🔗 已添加 {len(link_blocks)} 个关联链接")
 
     def update_memo(self, memo, page_id):
+        """
+        智能更新 memo - 只更新有变化的内容
+
+        优化策略：
+        1. 基于 updated_at 时间戳判断是否需要完整更新
+        2. 如果内容没变，只更新标题
+        3. 如果内容变了，才清空并重新上传
+        """
         print("update_memo:", memo)
 
+        # Step 1: 获取现有页面的更新时间
+        try:
+            existing_page = self.notion_helper.client.pages.retrieve(page_id=page_id)
+            notion_updated = existing_page['properties'].get('更新时间', {}).get('date', {}).get('start', '')
+        except Exception as e:
+            print(f"  ⚠️ 获取页面信息失败: {e}")
+            notion_updated = ''
+
+        # Step 2: 对比时间戳
+        flomo_updated = memo.get('updated_at', '')
+
+        # 如果 Flomo 的更新时间 <= Notion 的更新时间，只更新标题
+        if notion_updated and flomo_updated <= notion_updated:
+            print(f"  ⏭️  内容未变化，只更新标题")
+            # 只更新标题（应用新的过滤规则）
+            content_text = html2text.html2text(memo['content'])
+            properties = {
+                "标题": notion_utils.get_title(
+                    truncate_string(content_text)
+                ),
+            }
+            try:
+                self.notion_helper.client.pages.update(page_id=page_id, properties=properties)
+                print(f"  ✅ 标题已更新")
+                return
+            except Exception as e:
+                print(f"  ❌ 标题更新失败: {e}")
+                return
+
+        # Step 3: 内容确实变化了，完整更新
+        print(f"  📝 内容已变化，完整更新")
         content_md = markdownify(memo['content'])
-        # 只更新内容
         content_text = html2text.html2text(memo['content'])
         properties = {
             "标题": notion_utils.get_title(

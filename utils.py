@@ -84,6 +84,9 @@ def truncate_string(s, length=30):
     # 跳过开头的 URL
     s = re.sub(r'^https?://\S+\s*', '', s.strip())
 
+    # 跳过"关联自"或"关联到"开头（多种冒号格式）
+    s = re.sub(r'^关联[自到][：:]\s*', '', s)
+
     # 过滤掉标签（#开头的词）
     s = re.sub(r'#\S+\s*', '', s)
 
