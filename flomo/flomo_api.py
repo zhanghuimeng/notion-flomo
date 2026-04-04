@@ -71,7 +71,11 @@ class FlomoApi:
 
 
 if __name__ == "__main__":
+    import os
     flomo_api = FlomoApi()
-    authorization = 'REDACTED'
+    authorization = os.getenv("FLOMO_TOKEN", "")
+    if not authorization:
+        print("请设置 FLOMO_TOKEN 环境变量")
+        exit(1)
     memo_list = flomo_api.get_memo_list(authorization)
     print(memo_list)

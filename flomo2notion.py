@@ -190,6 +190,25 @@ class Flomo2Notion:
 
         return blocks
 
+    def _get_attachment_types(self, memo):
+        """
+        从 memo 的 files 数组中提取附件类型
+
+        Returns:
+            list: 附件类型列表，如 ["图片", "音频"]
+        """
+        type_map = {
+            'image': '图片',
+            'audio': '音频',
+        }
+        files = memo.get('files', [])
+        types = set()
+        for f in files:
+            file_type = f.get('type', '')
+            if file_type in type_map:
+                types.add(type_map[file_type])
+        return list(types)
+
     def insert_memo(self, memo):
         print(f"\n✨ 新增 memo: {memo['slug']} (创建于 {memo.get('created_at', 'N/A')})")
         content_md = markdownify(memo['content'])
@@ -203,14 +222,15 @@ class Flomo2Notion:
                 memo['tags']
             ),
             "是否置顶": notion_utils.get_select("否" if memo['pin'] == 0 else "是"),
-            # 文件的处理方式待定
-            # "文件": notion_utils.get_file(""),
             # slug是文章唯一标识
             "slug": notion_utils.get_rich_text(memo['slug']),
             "创建时间": notion_utils.get_date(memo['created_at']),
             "更新时间": notion_utils.get_date(memo['updated_at']),
             "来源": notion_utils.get_select(memo['source']),
             "链接数量": notion_utils.get_number(memo['linked_count']),
+            "附件类型": notion_utils.get_multi_select(
+                self._get_attachment_types(memo)
+            ),
         }
 
         page = self.notion_helper.client.pages.create(
@@ -324,6 +344,9 @@ class Flomo2Notion:
                 memo['tags']
             ),
             "是否置顶": notion_utils.get_select("否" if memo['pin'] == 0 else "是"),
+            "附件类型": notion_utils.get_multi_select(
+                self._get_attachment_types(memo)
+            ),
         }
         page = self.notion_helper.client.pages.update(page_id=page_id, properties=properties)
 
