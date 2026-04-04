@@ -321,10 +321,13 @@ class Flomo2Notion:
                 "标题": notion_utils.get_title(
                     truncate_string(content_text)
                 ),
+                "附件类型": notion_utils.get_multi_select(
+                    self._get_attachment_types(memo)
+                ),
             }
             try:
                 self.notion_helper.client.pages.update(page_id=page_id, properties=properties)
-                print(f"  ✅ 标题已更新")
+                print(f"  ✅ 标题和附件类型已更新")
                 return
             except Exception as e:
                 print(f"  ❌ 标题更新失败: {e}")
