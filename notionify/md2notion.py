@@ -8,6 +8,16 @@ class Md2NotionUploader:
     image_host_object = None
     local_root = "markdown_notebook"
 
+    # Block type name mapping (shared between methods)
+    BLOCK_NAME_MAP = {
+        'text': 'paragraph',
+        'bulleted_list': 'bulleted_list_item',
+        'header': 'heading_1',
+        'sub_header': 'heading_2',
+        'sub_sub_header': 'heading_3',
+        'numbered_list': 'numbered_list_item'
+    }
+
     def __init__(self, image_host='aliyun', auth=None):
         self.image_host = image_host
         self.auth = auth
@@ -56,14 +66,16 @@ class Md2NotionUploader:
         result = []
         for part in parts:
             if part.startswith('$$'):
-                expression = part.strip('$$')
+                expression = part[2:-2]
                 result.append({
                     "equation": {
                         "expression": expression.strip()
                     }
                 })
             elif part.startswith('![') and '](' in part:
-                caption, url = re.match(r'!\[(.*?)\]\((.*?)\)', part).groups()
+                match = re.match(r'!\[(.*?)\]\((.*?)\)', part)
+                if match:
+                    caption, url = match.groups()
                 url = self.convert_to_oneline_url(url)
                 result.append({
                     "image": {
@@ -135,7 +147,7 @@ class Md2NotionUploader:
         elif self.image_host == 'aliyun':
             return self.convert_to_oneline_url_aliyun(url)
         else:
-            raise "Invalid Image Hosting"
+            raise ValueError("Invalid Image Hosting")
 
     def convert_to_oneline_url_onedrive(self, url):
         if os.path.exists(url):
@@ -179,7 +191,7 @@ class Md2NotionUploader:
 
         for part in parts:
             if part.startswith('$'):
-                expression = part.strip('$')
+                expression = part[1:-1]
                 result.append({
                     "type": "equation",
                     "equation": {
@@ -192,20 +204,33 @@ class Md2NotionUploader:
                 for style_part in style_parts:
                     annotations, clean_text = self.parse_annotations(style_part)
                     if clean_text.startswith('[') and '](' in clean_text:
-                        link_text, url = re.match(r'\[(.*?)\]\((.*?)\)', clean_text).groups()
+                        match = re.match(r'\[(.*?)\]\((.*?)\)', clean_text)
+                        if match:
+                            link_text, url = match.groups()
 
-                        result.append({
-                            "type": "text",
-                            "text": {
-                                "content": link_text,
-                                "link": {
-                                    "url": url
-                                }
-                            },
-                            "annotations": annotations,
-                            "plain_text": link_text,
-                            "href": url
-                        })
+                            result.append({
+                                "type": "text",
+                                "text": {
+                                    "content": link_text,
+                                    "link": {
+                                        "url": url
+                                    }
+                                },
+                                "annotations": annotations,
+                                "plain_text": link_text,
+                                "href": url
+                            })
+                        else:
+                            result.append({
+                                "type": "text",
+                                "text": {
+                                    "content": clean_text,
+                                    "link": None
+                                },
+                                "annotations": annotations,
+                                "plain_text": clean_text,
+                                "href": None
+                            })
                     elif clean_text:
                         result.append({
                             "type": "text",
@@ -268,7 +293,8 @@ class Md2NotionUploader:
     def convert_image(self, _dict):
         url = _dict['source']
         url = self.convert_to_oneline_url(url)
-        assert url is not None
+        if not url:
+            raise ValueError(f"Failed to convert image URL: {_dict.get('source', 'unknown')}")
         return [{"image": {"caption": [], "type": "external",
                            "external": {"url": url}
                            }
@@ -285,14 +311,7 @@ class Md2NotionUploader:
 
         @todo Make mdFilePath optional and don't do searching if not provided
         """
-        new_name_map = {
-            'text': 'paragraph',
-            'bulleted_list': 'bulleted_list_item',
-            'header': 'heading_1',
-            'sub_header': 'heading_2',
-            'sub_sub_header': 'heading_3',
-            'numbered_list': 'numbered_list_item'
-        }
+        new_name_map = self.BLOCK_NAME_MAP
         blockClass = blockDescriptor["type"]
 
         old_name = blockDescriptor['type']._type
@@ -452,14 +471,14 @@ if __name__ == '__main__':
     auth = {
         'aliyun': {
             'access_key_id': os.getenv("ALIYUN_OSS_ACCESS_KEY_ID"),
-            'access_key_secret:': os.getenv("ALIYUN_OSS_ACCESS_KEY_SECRET"),
+            'access_key_secret': os.getenv("ALIYUN_OSS_ACCESS_KEY_SECRET"),
             'endpoint': os.getenv("ALIYUN_OSS_ENDPOINT"),
             'bucket': os.getenv("ALIYUN_OSS_BUCKET")
         }
     }
     uploader = Md2NotionUploader(image_host='aliyun', auth=auth)
-    key = os.getenv("NOTION_INTEGRATION_SECRET")
-    notion = Client(auth=os.getenv("NOTION_INTEGRATION_SECRET"))
+    key = os.getenv("NOTION_TOKEN")
+    notion = Client(auth=os.getenv("NOTION_TOKEN"))
     uploader.uploadSingleFile(
         notion,
         "/usr/local/var/sideline/notionify/notionify-transfer/notionify-transfer-leanote/6107bb66ab64416caa000a0f.md",

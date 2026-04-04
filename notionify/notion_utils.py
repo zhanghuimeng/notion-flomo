@@ -9,7 +9,7 @@ import requests
 from utils import str_to_timestamp
 
 MAX_LENGTH = (
-    1024  # NOTION 2000个字符限制https://developers.notionify.com/reference/request-limits
+    2000  # Notion rich_text content limit: https://developers.notion.com/reference/request-limits
 )
 
 
@@ -221,7 +221,7 @@ def download_image(url, save_dir="cover"):
         print(f"File {file_name} already exists. Skipping download.")
         return save_path
 
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=30)
     if response.status_code == 200:
         with open(save_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=128):

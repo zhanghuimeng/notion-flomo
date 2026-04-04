@@ -24,7 +24,7 @@ HEADERS = {
 
 
 class FlomoApi:
-    def __int__(self):
+    def __init__(self):
         pass
 
     def get_memo_list(self, user_authorization, latest_updated_at="0"):

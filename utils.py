@@ -63,7 +63,7 @@ def get_first_and_last_day_of_week(date):
 
 
 def str_to_timestamp(date):
-    if date == None:
+    if date is None:
         return 0
     dt = pendulum.parse(date)
     # 获取时间戳

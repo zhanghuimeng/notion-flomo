@@ -150,7 +150,7 @@ class NotionFileUploader:
                     test_img = Image.open(io.BytesIO(file_data))
                     if test_img.format == 'GIF' and hasattr(test_img, 'n_frames') and test_img.n_frames > 1:
                         print(f"  ⚠️  检测到 GIF 动画（{test_img.n_frames} 帧），压缩将丢失动画效果")
-                except:
+                except Exception:
                     pass
 
                 print(f"  🗜️ 图片超过 {COMPRESS_IMAGE_THRESHOLD_MB}MB，启用压缩...")

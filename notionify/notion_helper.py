@@ -127,4 +127,5 @@ class NotionHelper:
 
 if __name__ == "__main__":
     notion_helper = NotionHelper()
-    notion_helper.query()
+    results = notion_helper.query_all(notion_helper.page_id)
+    print(f"Total pages: {len(results)}")
