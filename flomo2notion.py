@@ -57,7 +57,7 @@ class Flomo2Notion:
             # 创建对应类型的 block
             if file_type == 'image' or 'image' in content_type:
                 block = self.file_uploader.create_image_block(file_upload_id)
-            elif file_type == 'audio' or 'audio' in content_type:
+            elif file_type in ('audio', 'recorded') or 'audio' in content_type:
                 block = self.file_uploader.create_audio_block(file_upload_id)
             else:
                 block = self.file_uploader.create_file_block(file_upload_id, file_name)
@@ -200,6 +200,7 @@ class Flomo2Notion:
         type_map = {
             'image': '图片',
             'audio': '音频',
+            'recorded': '音频',
         }
         files = memo.get('files', [])
         types = set()
