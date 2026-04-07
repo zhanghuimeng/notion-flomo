@@ -112,21 +112,24 @@ class Flomo2Notion:
 
     def _mark_deleted_memos(self, all_flomo_slugs, deleted_slugs):
         """
-        标记 Notion 中已删除的 memo
+        标记/取消标记 Notion 中已删除的 memo
 
         Args:
             all_flomo_slugs: set - Flomo API 本次返回的所有 slug
             deleted_slugs: set - Flomo 中 deleted_at != None 的 slug
         """
         notion_slugs = set(self.slug_to_page_id.keys())
-        # 需要标记的：Flomo 明确删除的 + Notion 有但 Flomo 没返回的
+        # 需要标记为已删除的：Flomo 明确删除的 + Notion 有但 Flomo 没返回的
         to_mark = deleted_slugs | (notion_slugs - all_flomo_slugs)
+        # 需要清除删除标记的：在 Flomo 中正常存在但 Notion 之前被误标为删除的
+        active_flomo_slugs = all_flomo_slugs - deleted_slugs
+        to_unmark = notion_slugs & active_flomo_slugs
 
-        if not to_mark:
+        if not to_mark and not to_unmark:
             return
 
-        print(f"\n🗑️ 检查需要标记为已删除的页面...")
         marked_count = 0
+        unmarked_count = 0
 
         for slug in to_mark:
             if slug not in self.slug_to_page_id:
@@ -144,8 +147,24 @@ class Flomo2Notion:
             except Exception as e:
                 print(f"  ❌ 标记失败 {slug}: {e}")
 
-        if marked_count > 0:
-            print(f"✅ 共标记 {marked_count} 个页面为已删除")
+        for slug in to_unmark:
+            if slug not in self.slug_to_page_id:
+                continue
+            page_id = self.slug_to_page_id[slug]
+            try:
+                self.notion_helper.client.pages.update(
+                    page_id=page_id,
+                    properties={
+                        "已删除": {"select": None}
+                    }
+                )
+                print(f"  🔄 已清除删除标记: {slug}")
+                unmarked_count += 1
+            except Exception as e:
+                print(f"  ❌ 清除标记失败 {slug}: {e}")
+
+        if marked_count > 0 or unmarked_count > 0:
+            print(f"\n✅ 标记删除 {marked_count} 个，清除标记 {unmarked_count} 个")
 
     def _extract_flomo_links(self, content):
         """
@@ -362,12 +381,13 @@ class Flomo2Notion:
         # Step 2.5: 检测文件/附件变更（即使时间戳未变化，文件也可能变了）
         if not should_full_update:
             flomo_files = memo.get('files', [])
-            notion_blocks = self._count_file_blocks(page_id)
-            total_flomo_files = len(flomo_files)
-            total_notion_files = notion_blocks['image'] + notion_blocks['audio'] + notion_blocks['file']
-            if total_flomo_files != total_notion_files:
-                print(f"  📎 文件数量变化（Flomo {total_flomo_files} vs Notion {total_notion_files}），升级为完整更新")
-                should_full_update = True
+            if flomo_files:  # 只在 Flomo 有文件时才检测，避免无意义的 API 调用
+                notion_blocks = self._count_file_blocks(page_id)
+                total_flomo_files = len(flomo_files)
+                total_notion_files = notion_blocks['image'] + notion_blocks['audio'] + notion_blocks['file']
+                if total_flomo_files != total_notion_files:
+                    print(f"  📎 文件数量变化（Flomo {total_flomo_files} vs Notion {total_notion_files}），升级为完整更新")
+                    should_full_update = True
 
         # 如果 Flomo 的更新时间 <= Notion 的更新时间（分钟级别）且文件没变，只更新标题
         if notion_updated and flomo_updated and not should_full_update:
@@ -533,9 +553,9 @@ class Flomo2Notion:
         print(f"  📦 总计: {len(memo_list)} 条")
         print()
 
-        # Step 3: 标记已删除的 memo
+        # Step 3: 标记/清除已删除的 memo
         print("="*70)
-        print("🗑️ 步骤3: 标记已删除的 memo")
+        print("🗑️ 步骤3: 同步删除状态")
         print("="*70)
         all_flomo_slugs = {m['slug'] for m in memo_list}
         deleted_slugs = {m['slug'] for m in memo_list if m.get('deleted_at') is not None}
